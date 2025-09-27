@@ -198,6 +198,10 @@ class MockStdscr:
     def hline(self, y, x, ch, n):
         """Draw horizontal line."""
         self.output_buffer.append(f"HLINE({y},{x}): {n} chars")
+    
+    def addch(self, y, x, ch, attr=0):
+        """Add single character to screen."""
+        self.output_buffer.append(f"ADDCH({y},{x}): {ch}")
         return 0
     
     def attron(self, attr):

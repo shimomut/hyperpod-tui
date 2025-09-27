@@ -108,6 +108,22 @@ class HyperPodTUI:
             # Filter was updated, screen will redraw automatically
             pass
         
+        elif action == 'toggle_json':
+            # Toggle JSON pane visibility
+            self.current_screen.toggle_json_pane()
+            # Update JSON content when pane is opened
+            if hasattr(self.current_screen, '_update_json_content'):
+                self.current_screen._update_json_content()
+        
+        elif action == 'focus_changed':
+            # Focus changed between panes, no additional action needed
+            pass
+        
+        elif action in ['json_up', 'json_down', 'json_page_up', 'json_page_down']:
+            # Handle JSON pane scrolling
+            direction = action.replace('json_', '')
+            self.current_screen.scroll_json(direction)
+        
         # Handle window resize
         elif key == 'KEY_RESIZE':
             self.current_screen.resize()

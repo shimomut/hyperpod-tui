@@ -23,7 +23,8 @@ DEFAULT_CONFIG = {
         "end": ["KEY_END"],
         "delete": ["KEY_DC"],
         "clear_filter": ["KEY_DC", "x"],
-        "refresh": ["r", "R", "KEY_F5"]
+        "refresh": ["r", "R", "KEY_F5"],
+        "toggle_json": ["\t"]
     },
     "ui": {
         "default_details_height": 0.3,  # 30% of screen height

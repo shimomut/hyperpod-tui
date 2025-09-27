@@ -2,6 +2,7 @@
 
 import curses
 import fnmatch
+import json
 import os
 from typing import List, Dict, Any, Optional, Union
 from .models import Cluster, InstanceGroup, Instance
@@ -81,6 +82,13 @@ class TUIScreen:
         self.search_mode = False  # Track if we're in incremental search mode
         self.caret_position = 0  # Position of caret in search text
         
+        # JSON pane state
+        self.json_pane_visible = False
+        self.json_content = ""
+        self.json_scroll_offset = 0
+        self.json_lines = []
+        self.json_pane_focused = False  # Track which pane has focus
+        
         # Calculate pane dimensions
         self._calculate_dimensions()
         
@@ -98,6 +106,9 @@ class TUIScreen:
                 curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)     # Error
                 curses.init_pair(5, curses.COLOR_GREEN, curses.COLOR_BLACK)   # Info
                 curses.init_pair(6, curses.COLOR_WHITE, curses.COLOR_BLACK)   # Bright white for search mode
+                curses.init_pair(7, curses.COLOR_YELLOW, curses.COLOR_BLACK)  # JSON syntax highlighting
+                curses.init_pair(8, curses.COLOR_MAGENTA, curses.COLOR_BLACK) # JSON keys
+                curses.init_pair(9, curses.COLOR_BLUE, curses.COLOR_BLACK)    # JSON values
         except (curses.error, AttributeError):
             # In test mode or if curses is not properly initialized
             pass
@@ -107,6 +118,10 @@ class TUIScreen:
         self.header_height = 1
         self.footer_height = 2
         self.filter_height = 1
+        
+        # Calculate JSON pane width (40% of screen when visible)
+        self.json_pane_width = int(self.width * 0.4) if self.json_pane_visible else 0
+        self.left_pane_width = self.width - self.json_pane_width
         
         available_height = self.height - self.header_height - self.footer_height - self.filter_height
         self.details_height = max(
@@ -124,11 +139,158 @@ class TUIScreen:
         self.list_y = self.header_height + self.filter_height
         self.details_y = self.list_y + self.list_height
         self.footer_y = self.height - self.footer_height
+        
+        # JSON pane dimensions
+        self.json_pane_x = self.left_pane_width
+        self.json_pane_height = available_height
     
     def resize(self):
         """Handle screen resize."""
         self.height, self.width = self.stdscr.getmaxyx()
         self._calculate_dimensions()
+    
+    def toggle_json_pane(self):
+        """Toggle the JSON pane visibility."""
+        if self.json_pane_visible:
+            # Closing JSON pane
+            self.json_pane_visible = False
+            self.json_pane_focused = False
+        else:
+            # Opening JSON pane
+            self.json_pane_visible = True
+            self.json_pane_focused = True  # Focus on JSON pane when opened
+        self._calculate_dimensions()
+    
+    def set_json_content(self, data: Any):
+        """Set the content for the JSON pane."""
+        try:
+            self.json_content = json.dumps(data, indent=2, default=str)
+            self.json_lines = self.json_content.split('\n')
+            self.json_scroll_offset = 0
+        except Exception as e:
+            self.json_content = f"Error formatting JSON: {str(e)}"
+            self.json_lines = [self.json_content]
+            self.json_scroll_offset = 0
+    
+    def scroll_json(self, direction: str):
+        """Scroll the JSON pane."""
+        if not self.json_pane_visible or not self.json_lines:
+            return
+        
+        max_scroll = max(0, len(self.json_lines) - self.json_pane_height + 2)  # +2 for border
+        
+        if direction == 'up':
+            self.json_scroll_offset = max(0, self.json_scroll_offset - 1)
+        elif direction == 'down':
+            self.json_scroll_offset = min(max_scroll, self.json_scroll_offset + 1)
+        elif direction == 'page_up':
+            self.json_scroll_offset = max(0, self.json_scroll_offset - (self.json_pane_height - 2))
+        elif direction == 'page_down':
+            self.json_scroll_offset = min(max_scroll, self.json_scroll_offset + (self.json_pane_height - 2))
+    
+    def draw_json_pane(self):
+        """Draw the JSON pane with syntax highlighting."""
+        if not self.json_pane_visible:
+            return
+        
+        # Draw vertical border
+        for y in range(self.list_y, self.footer_y):
+            try:
+                self.stdscr.addch(y, self.json_pane_x - 1, '|')
+            except curses.error:
+                pass
+        
+        # Draw JSON pane header with focus indicator
+        focus_indicator = "*" if self.json_pane_focused else " "
+        header_text = f"{focus_indicator}JSON{focus_indicator}"
+        try:
+            color = safe_color_pair(1) | safe_attr("A_BOLD")
+            if self.json_pane_focused:
+                color |= safe_attr("A_REVERSE")  # Highlight when focused
+            self.stdscr.attron(color)
+            self.stdscr.addstr(self.list_y, self.json_pane_x, header_text.ljust(self.json_pane_width)[:self.json_pane_width])
+            self.stdscr.attroff(color)
+        except curses.error:
+            pass
+        
+        # Draw JSON content
+        visible_height = self.json_pane_height - 1  # -1 for header
+        start_line = self.json_scroll_offset
+        
+        for i in range(visible_height):
+            y = self.list_y + 1 + i
+            line_index = start_line + i
+            
+            if y >= self.footer_y:
+                break
+            
+            if line_index < len(self.json_lines):
+                line = self.json_lines[line_index]
+                # Simple syntax highlighting
+                self._draw_json_line(y, self.json_pane_x, line)
+            else:
+                # Clear empty lines
+                try:
+                    self.stdscr.addstr(y, self.json_pane_x, " " * self.json_pane_width)
+                except curses.error:
+                    pass
+    
+    def _draw_json_line(self, y: int, x: int, line: str):
+        """Draw a single JSON line with basic syntax highlighting."""
+        if not line.strip():
+            try:
+                self.stdscr.addstr(y, x, " " * self.json_pane_width)
+            except curses.error:
+                pass
+            return
+        
+        # Truncate line to fit in pane
+        display_line = line[:self.json_pane_width]
+        
+        # Basic syntax highlighting
+        try:
+            if ':' in display_line and '"' in display_line:
+                # Try to highlight JSON key-value pairs
+                parts = display_line.split(':', 1)
+                if len(parts) == 2:
+                    key_part = parts[0]
+                    value_part = ':' + parts[1]
+                    
+                    # Draw key part (usually contains quotes)
+                    self.stdscr.attron(safe_color_pair(8))  # Magenta for keys
+                    self.stdscr.addstr(y, x, key_part[:self.json_pane_width])
+                    self.stdscr.attroff(safe_color_pair(8))
+                    
+                    # Draw value part
+                    remaining_width = self.json_pane_width - len(key_part)
+                    if remaining_width > 0:
+                        self.stdscr.attron(safe_color_pair(9))  # Blue for values
+                        self.stdscr.addstr(y, x + len(key_part), value_part[:remaining_width])
+                        self.stdscr.attroff(safe_color_pair(9))
+                else:
+                    # Fallback to normal color
+                    self.stdscr.addstr(y, x, display_line)
+            else:
+                # Structural characters (brackets, braces)
+                if any(char in display_line for char in ['{', '}', '[', ']']):
+                    self.stdscr.attron(safe_color_pair(7))  # Yellow for structure
+                    self.stdscr.addstr(y, x, display_line)
+                    self.stdscr.attroff(safe_color_pair(7))
+                else:
+                    # Normal text
+                    self.stdscr.addstr(y, x, display_line)
+            
+            # Fill remaining space
+            remaining = self.json_pane_width - len(display_line)
+            if remaining > 0:
+                self.stdscr.addstr(y, x + len(display_line), " " * remaining)
+                
+        except curses.error:
+            # Fallback: just draw the line without highlighting
+            try:
+                self.stdscr.addstr(y, x, display_line.ljust(self.json_pane_width)[:self.json_pane_width])
+            except curses.error:
+                pass
     
     def _is_backspace_key(self, key: str) -> bool:
         """Check if the key is a backspace key, handling multiple representations."""
@@ -166,11 +328,35 @@ class TUIScreen:
         """Draw the header."""
         self.stdscr.attron(safe_color_pair(1) | safe_attr("A_BOLD"))
         header_text = f" HyperPod TUI - {self.title} "
-        safe_header = header_text.ljust(self.width)[:self.width - 1]
-        try:
-            self.stdscr.addstr(self.header_y, 0, safe_header)
-        except curses.error:
-            pass  # Skip if we can't draw the header
+        
+        if self.json_pane_visible:
+            # Draw header for left pane
+            left_header = header_text.ljust(self.left_pane_width)[:self.left_pane_width - 1]
+            try:
+                self.stdscr.addstr(self.header_y, 0, left_header)
+            except curses.error:
+                pass
+            
+            # Draw separator
+            try:
+                self.stdscr.addch(self.header_y, self.left_pane_width - 1, '|')
+            except curses.error:
+                pass
+            
+            # Draw header for JSON pane
+            json_header = " JSON View ".ljust(self.json_pane_width)[:self.json_pane_width]
+            try:
+                self.stdscr.addstr(self.header_y, self.json_pane_x, json_header)
+            except curses.error:
+                pass
+        else:
+            # Draw full-width header
+            safe_header = header_text.ljust(self.width)[:self.width - 1]
+            try:
+                self.stdscr.addstr(self.header_y, 0, safe_header)
+            except curses.error:
+                pass
+        
         self.stdscr.attroff(safe_color_pair(1) | safe_attr("A_BOLD"))
     
     def draw_footer(self):
@@ -183,10 +369,12 @@ class TUIScreen:
                 " ↑↓:Navigate  ←→:Move caret  Backspace:Delete  Del:Delete at caret "
             ]
         else:
+            json_status = "Hide JSON" if self.json_pane_visible else "Show JSON"
             footer_lines = [
-                " q:Quit  Enter:Select  Backspace:Back  {}:Shrink  {}:Expand  r:Refresh ".format(
+                " q:Quit  Enter:Select  Backspace:Back  {}:Shrink  {}:Expand  r:Refresh  TAB:{} ".format(
                     config.get('key_bindings.shrink_details', ['{'])[0],
-                    config.get('key_bindings.expand_details', ['}'])[0]
+                    config.get('key_bindings.expand_details', ['}'])[0],
+                    json_status
                 ),
                 " ↑↓:Navigate  PgUp/PgDn:Page  Home/End:First/Last  f:Search  Del/x:Clear Filter "
             ]
@@ -223,6 +411,9 @@ class TUIScreen:
         if not self.search_mode and not self.filter_text:
             filter_line += " (Press 'f' to search)"
         
+        # Calculate available width for filter (left pane only)
+        available_width = self.left_pane_width if self.json_pane_visible else self.width
+        
         if self.search_mode:
             # In search mode, draw prompt and text with bright white color
             self.stdscr.attron(color_pair)
@@ -250,7 +441,7 @@ class TUIScreen:
             
             # Draw caret (character at caret position with inverted colors)
             caret_x = text_start_x + self.caret_position
-            if caret_x < self.width - 1:  # Ensure we don't go beyond screen width
+            if caret_x < available_width - 1:  # Ensure we don't go beyond available width
                 if self.caret_position < len(self.filter_text):
                     # Caret is on an existing character - invert it
                     caret_char = self.filter_text[self.caret_position]
@@ -272,7 +463,7 @@ class TUIScreen:
             if self.caret_position < len(self.filter_text):
                 after_caret = self.filter_text[self.caret_position + 1:]
                 after_caret_x = text_start_x + self.caret_position + 1
-                if after_caret and after_caret_x < self.width - 1:
+                if after_caret and after_caret_x < available_width - 1:
                     try:
                         self.stdscr.addstr(self.filter_y, after_caret_x, after_caret)
                     except curses.error:
@@ -280,8 +471,8 @@ class TUIScreen:
             
             # Fill the rest of the line with normal background
             remaining_start = text_start_x + len(self.filter_text) + (1 if self.caret_position >= len(self.filter_text) else 0)
-            if remaining_start < self.width:
-                remaining_spaces = " " * (self.width - remaining_start - 1)
+            if remaining_start < available_width:
+                remaining_spaces = " " * (available_width - remaining_start - 1)
                 try:
                     self.stdscr.attroff(color_pair)  # Turn off bright white for background
                     self.stdscr.attron(safe_color_pair(3))  # Use normal color for background
@@ -294,7 +485,7 @@ class TUIScreen:
         else:
             # Normal mode - draw as before
             self.stdscr.attron(color_pair)
-            safe_filter = filter_line.ljust(self.width)[:self.width - 1]
+            safe_filter = filter_line.ljust(available_width)[:available_width - 1]
             try:
                 self.stdscr.addstr(self.filter_y, 0, safe_filter)
             except curses.error:
@@ -409,14 +600,22 @@ class TUIScreen:
             self.caret_position = len(self.filter_text)  # Position caret at end of existing text
             return 'search_started'
         
-        # Navigation
+        # Navigation - route to appropriate pane based on focus
         elif key in config.get('key_bindings.up', ['KEY_UP', 'k']):
+            if self.json_pane_visible and self.json_pane_focused:
+                return 'json_up'
             return 'up'
         elif key in config.get('key_bindings.down', ['KEY_DOWN', 'j']):
+            if self.json_pane_visible and self.json_pane_focused:
+                return 'json_down'
             return 'down'
         elif key in config.get('key_bindings.page_up', ['KEY_PPAGE']):
+            if self.json_pane_visible and self.json_pane_focused:
+                return 'json_page_up'
             return 'page_up'
         elif key in config.get('key_bindings.page_down', ['KEY_NPAGE']):
+            if self.json_pane_visible and self.json_pane_focused:
+                return 'json_page_down'
             return 'page_down'
         elif key in config.get('key_bindings.home', ['KEY_HOME']):
             return 'home'
@@ -440,6 +639,16 @@ class TUIScreen:
         # Filter management
         elif key in config.get('key_bindings.clear_filter', ['KEY_DC', 'x']):
             return 'clear_filter'
+        
+        # JSON pane toggle and focus
+        elif key == '\t':  # TAB key
+            if self.json_pane_visible:
+                # Toggle focus between panes
+                self.json_pane_focused = not self.json_pane_focused
+                return 'focus_changed'
+            else:
+                # Open JSON pane
+                return 'toggle_json'
         
         return None
 
@@ -470,6 +679,7 @@ class ClusterListScreen(TUIScreen):
         self.draw_filter()
         self.draw_cluster_list()
         self.draw_cluster_details()
+        self.draw_json_pane()
         self.draw_footer()
         
         self.stdscr.refresh()
@@ -492,7 +702,7 @@ class ClusterListScreen(TUIScreen):
             self.scroll_offset = self.selected_index - visible_count + 1
         
         # Draw border
-        safe_hline(self.stdscr, self.list_y, 0, self.width - 1)
+        safe_hline(self.stdscr, self.list_y, 0, self.left_pane_width - 1)
         
         # Handle empty cluster list
         if not filtered_clusters:
@@ -507,7 +717,7 @@ class ClusterListScreen(TUIScreen):
                 message = f"No clusters match filter '{self.filter_text}'. Press 'x' to clear filter."
             
             try:
-                self.stdscr.addstr(y, 2, message[:self.width - 4])
+                self.stdscr.addstr(y, 2, message[:self.left_pane_width - 4])
             except curses.error:
                 pass
             return
@@ -531,7 +741,7 @@ class ClusterListScreen(TUIScreen):
                 if is_selected:
                     self.stdscr.attron(safe_color_pair(2))
                 
-                safe_line = cluster_line.ljust(self.width)[:self.width - 1]
+                safe_line = cluster_line.ljust(self.left_pane_width)[:self.left_pane_width - 1]
                 try:
                     self.stdscr.addstr(y, 0, safe_line)
                 except curses.error:
@@ -541,14 +751,14 @@ class ClusterListScreen(TUIScreen):
                     self.stdscr.attroff(safe_color_pair(2))
             else:
                 try:
-                    self.stdscr.addstr(y, 0, " " * (self.width - 1))
+                    self.stdscr.addstr(y, 0, " " * (self.left_pane_width - 1))
                 except curses.error:
                     pass
     
     def draw_cluster_details(self):
         """Draw details of the selected cluster."""
         # Draw border
-        safe_hline(self.stdscr, self.details_y, 0, self.width - 1)
+        safe_hline(self.stdscr, self.details_y, 0, self.left_pane_width - 1)
         
         filtered_clusters = self.get_filtered_items(self.clusters)
         if not filtered_clusters or self.selected_index >= len(filtered_clusters):
@@ -572,7 +782,7 @@ class ClusterListScreen(TUIScreen):
             if y >= self.footer_y:
                 break
             detail_line = f"{key}: {value}"
-            safe_detail = detail_line[:self.width - 3]  # Leave room for the indent
+            safe_detail = detail_line[:self.left_pane_width - 3]  # Leave room for the indent
             try:
                 self.stdscr.addstr(y, 2, safe_detail)
             except curses.error:
@@ -605,6 +815,18 @@ class ClusterListScreen(TUIScreen):
             self.selected_index = 0
         elif direction == 'end':
             self.selected_index = len(filtered_clusters) - 1
+        
+        # Update JSON content when selection changes
+        self._update_json_content()
+    
+    def _update_json_content(self):
+        """Update JSON pane content with selected cluster data."""
+        if self.json_pane_visible:
+            cluster = self.get_selected_cluster()
+            if cluster:
+                self.set_json_content(cluster.to_dict())
+            else:
+                self.set_json_content({"message": "No cluster selected"})
 
 
 class InstanceGroupListScreen(TUIScreen):
@@ -623,6 +845,7 @@ class InstanceGroupListScreen(TUIScreen):
         self.draw_filter()
         self.draw_instance_group_list()
         self.draw_instance_group_details()
+        self.draw_json_pane()
         self.draw_footer()
         
         self.stdscr.refresh()
@@ -643,7 +866,7 @@ class InstanceGroupListScreen(TUIScreen):
             self.scroll_offset = self.selected_index - visible_count + 1
         
         try:
-            safe_hline(self.stdscr, self.list_y, 0, self.width - 1)
+            safe_hline(self.stdscr, self.list_y, 0, self.left_pane_width - 1)
         except curses.error:
             pass  # Skip border if we can't draw it
         
@@ -664,7 +887,7 @@ class InstanceGroupListScreen(TUIScreen):
                 if is_selected:
                     self.stdscr.attron(safe_color_pair(2))
                 
-                safe_line = group_line.ljust(self.width)[:self.width - 1]
+                safe_line = group_line.ljust(self.left_pane_width)[:self.left_pane_width - 1]
                 try:
                     self.stdscr.addstr(y, 0, safe_line)
                 except curses.error:
@@ -673,7 +896,7 @@ class InstanceGroupListScreen(TUIScreen):
                 if is_selected:
                     self.stdscr.attroff(safe_color_pair(2))
             else:
-                safe_empty = " " * (self.width - 1)
+                safe_empty = " " * (self.left_pane_width - 1)
                 try:
                     self.stdscr.addstr(y, 0, safe_empty)
                 except curses.error:
@@ -681,7 +904,7 @@ class InstanceGroupListScreen(TUIScreen):
     
     def draw_instance_group_details(self):
         """Draw details of the selected instance group."""
-        safe_hline(self.stdscr, self.details_y, 0, self.width - 1)
+        safe_hline(self.stdscr, self.details_y, 0, self.left_pane_width - 1)
         
         filtered_groups = self.get_filtered_items(self.instance_groups)
         if not filtered_groups or self.selected_index >= len(filtered_groups):
@@ -695,7 +918,7 @@ class InstanceGroupListScreen(TUIScreen):
             if y >= self.footer_y:
                 break
             detail_line = f"{key}: {value}"
-            safe_detail = detail_line[:self.width - 3]  # Leave room for the indent
+            safe_detail = detail_line[:self.left_pane_width - 3]  # Leave room for the indent
             try:
                 self.stdscr.addstr(y, 2, safe_detail)
             except curses.error:
@@ -728,6 +951,18 @@ class InstanceGroupListScreen(TUIScreen):
             self.selected_index = 0
         elif direction == 'end':
             self.selected_index = len(filtered_groups) - 1
+        
+        # Update JSON content when selection changes
+        self._update_json_content()
+    
+    def _update_json_content(self):
+        """Update JSON pane content with selected instance group data."""
+        if self.json_pane_visible:
+            group = self.get_selected_instance_group()
+            if group:
+                self.set_json_content(group.to_dict())
+            else:
+                self.set_json_content({"message": "No instance group selected"})
 
 
 class InstanceListScreen(TUIScreen):
