@@ -22,9 +22,9 @@ hyperpod-tui/
 │   └── hyperpod_tui/      # Main package directory
 │       ├── __init__.py    # Package initialization
 │       ├── main.py        # Application entry point
-│       ├── cli/           # Command-line interface components
-│       ├── tui/           # Terminal UI components
-│       ├── aws/           # AWS HyperPod integration
+│       ├── tui/           # Terminal UI components (curses-based)
+│       ├── aws/           # AWS SageMaker HyperPod integration (boto3)
+│       ├── models/        # Data models for HyperPod clusters
 │       └── utils/         # Utility functions
 ├── tests/                 # Test suite
 ├── docs/                  # Documentation
@@ -43,9 +43,17 @@ hyperpod-tui/
 
 ## Key Directories
 - `src/hyperpod_tui/` - Main application code
+- `src/hyperpod_tui/tui/` - Curses-based TUI components and screens
+- `src/hyperpod_tui/aws/` - Boto3-based AWS SageMaker HyperPod API integration
+- `src/hyperpod_tui/models/` - Data models for clusters, nodes, and jobs
 - `tests/` - Unit and integration tests
 - `docs/` - Documentation and guides
 - `examples/` - Sample configurations and usage examples
+
+## Platform Considerations
+- Use `curses` module for cross-platform TUI compatibility
+- Handle Windows-specific curses limitations (consider `windows-curses` package)
+- Ensure boto3 AWS credential handling works across all platforms
 
 ## Configuration Files
 - `pyproject.toml` - Modern Python project configuration (preferred)
