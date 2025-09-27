@@ -174,6 +174,35 @@ Potential future improvements that build on this foundation:
 4. **Error handling**: Graceful handling of edge cases
 5. **Performance**: No impact on normal navigation performance
 
+## Bug Fixes
+
+### Backspace Key Compatibility (Fixed)
+
+**Issue**: Backspace key was not working consistently across different terminals and platforms due to varying key representations.
+
+**Root Cause**: Different terminals send different key codes for backspace:
+- `KEY_BACKSPACE` - Standard curses backspace
+- `\b` - ASCII backspace (Ctrl+H)  
+- `\x7f` - DEL character (common on Unix)
+- `\x08` - Another backspace representation
+
+**Solution**: 
+1. Added `_is_backspace_key()` helper method to detect all common backspace representations
+2. Updated both search mode and navigation mode to use the robust backspace detection
+3. Enhanced configuration to include multiple backspace key variants
+4. Added comprehensive tests to verify functionality across all variants
+
+**Files Modified**:
+- `src/hyperpod_tui/tui.py` - Added robust backspace detection
+- `src/hyperpod_tui/config.py` - Extended backspace key configuration
+- `test_backspace_fix.py` - Comprehensive test suite for backspace functionality
+
+**Testing**: All backspace variants now work correctly in both:
+- Search mode (deleting characters from filter)
+- Navigation mode (going back/up a level)
+
 ## Conclusion
 
 The incremental search mode implementation successfully addresses the original requirement while maintaining full backward compatibility and providing a foundation for future search enhancements. The changes improve user experience by providing more predictable and controlled filtering behavior.
+
+The backspace key fix ensures consistent functionality across all terminal types and platforms, making the application more reliable and user-friendly.

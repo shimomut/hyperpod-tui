@@ -10,7 +10,7 @@ DEFAULT_CONFIG = {
     "key_bindings": {
         "quit": ["q", "Q"],
         "enter": ["\n", "\r"],
-        "back": ["\b", "KEY_BACKSPACE"],
+        "back": ["\b", "KEY_BACKSPACE", "\x7f", "\x08"],
         "expand_details": ["}"],
         "shrink_details": ["{"],
         "up": ["KEY_UP", "k"],

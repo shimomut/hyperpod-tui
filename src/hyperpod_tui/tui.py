@@ -98,6 +98,23 @@ class TUIScreen:
         self.height, self.width = self.stdscr.getmaxyx()
         self._calculate_dimensions()
     
+    def _is_backspace_key(self, key: str) -> bool:
+        """Check if the key is a backspace key, handling multiple representations."""
+        # Common backspace representations across different terminals and platforms
+        backspace_keys = [
+            'KEY_BACKSPACE',  # Standard curses backspace
+            '\b',             # ASCII backspace (Ctrl+H)
+            '\x7f',           # DEL character (common on Unix)
+            '\x08',           # Another backspace representation
+            '^H',             # Control-H representation
+        ]
+        
+        # Also check the configured backspace keys
+        configured_keys = config.get('key_bindings.back', ['\b', 'KEY_BACKSPACE'])
+        backspace_keys.extend(configured_keys)
+        
+        return key in backspace_keys
+    
     def adjust_details_height(self, increase: bool):
         """Adjust the height of the details pane."""
         available_height = self.height - self.header_height - self.footer_height - self.filter_height
@@ -222,8 +239,8 @@ class TUIScreen:
             elif key in config.get('key_bindings.down', ['KEY_DOWN', 'j']):
                 return 'down'
             
-            # Backspace in search mode
-            elif key == 'KEY_BACKSPACE' and self.filter_text:
+            # Backspace in search mode - handle multiple backspace representations
+            elif self._is_backspace_key(key) and self.filter_text:
                 self.filter_text = self.filter_text[:-1]
                 self.selected_index = 0
                 self.scroll_offset = 0
@@ -265,7 +282,7 @@ class TUIScreen:
         # Actions
         elif key in config.get('key_bindings.enter', ['\n', '\r']):
             return 'enter'
-        elif key in config.get('key_bindings.back', ['\b', 'KEY_BACKSPACE']):
+        elif self._is_backspace_key(key):
             return 'back'
         elif key in config.get('key_bindings.refresh', ['r', 'R', 'KEY_F5']):
             return 'refresh'
