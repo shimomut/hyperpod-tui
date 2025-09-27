@@ -140,6 +140,89 @@ All key bindings are configurable in the config file:
 }
 ```
 
+## Automated Testing
+
+HyperPod TUI includes a comprehensive automated testing system that simulates keyboard inputs to test the application without manual interaction.
+
+### Quick Testing
+
+```bash
+# List available test scenarios
+python run.py --list-tests
+
+# Run all tests
+python run.py --run-all-tests
+
+# Run a specific test scenario
+python run.py --test-scenario basic_navigation
+
+# Test with custom key sequence
+python run.py --test-key-seq "<DOWN><DOWN><ENTER>q"
+```
+
+### Using the Test Runner
+
+```bash
+# Dedicated test runner with more options
+python test_tui.py --list                    # List all tests
+python test_tui.py --all                     # Run all tests
+python test_tui.py --all --quick             # Run quick tests only
+python test_tui.py --scenario basic_navigation  # Run specific test
+python test_tui.py --key-seq "<DOWN>q"       # Custom key sequence
+python test_tui.py --all --verbose           # Verbose output
+```
+
+### Key Sequence Format
+
+The testing system supports both regular characters and special keys:
+
+```bash
+# Regular characters
+"hello"           # Types 'hello'
+"q"              # Quit command
+
+# Special keys (in angle brackets)
+"<ENTER>"        # Enter key
+"<UP><DOWN>"     # Arrow keys
+"<BACKSPACE>"    # Backspace
+"<DELETE>"       # Delete key
+"<HOME><END>"    # Home/End keys
+"<PAGEUP>"       # Page navigation
+
+# Complex example
+"<DOWN><DOWN>test<DELETE><ENTER>q"  # Navigate, filter, clear, enter, quit
+```
+
+### Available Test Scenarios
+
+- **quick_exit**: Test immediate application exit
+- **basic_navigation**: Navigate through TUI screens
+- **filter_functionality**: Test filtering and search features
+- **keyboard_shortcuts**: Test all keyboard shortcuts
+- **drill_down_navigation**: Test hierarchical navigation
+- **edge_cases**: Test boundary conditions and error handling
+- **stress_test**: Rapid input and navigation testing
+- **comprehensive_workflow**: Complete end-to-end workflow
+
+### Creating Custom Tests
+
+```python
+from hyperpod_tui.test_framework import TestCase, TestStep
+
+my_test = TestCase(
+    name="my_test",
+    description="Custom test description",
+    steps=[
+        TestStep("", "Start application"),
+        TestStep("<DOWN>", "Navigate down"),
+        TestStep("filter", "Apply filter"),
+        TestStep("q", "Quit"),
+    ]
+)
+```
+
+See `docs/TESTING.md` for comprehensive testing documentation.
+
 ## Development
 
 ### Setup Development Environment
@@ -148,8 +231,8 @@ All key bindings are configurable in the config file:
 # Install development dependencies
 pip install -e ".[dev]"
 
-# Run tests
-pytest
+# Run automated tests
+python test_tui.py --all
 
 # Run linting
 ruff check .

@@ -17,16 +17,23 @@ def check_terminal():
     return True
 
 if __name__ == "__main__":
-    if not check_terminal():
+    # Check if we're running tests or in test mode
+    test_mode = any(arg in sys.argv for arg in ['--test-key-seq', '--test-scenario', '--list-tests', '--run-all-tests'])
+    
+    if not test_mode and not check_terminal():
         sys.exit(1)
         
     try:
         from hyperpod_tui.main import main
-        print("Starting HyperPod TUI...")
-        print("Press 'q' to quit once the interface loads.")
+        
+        if not test_mode:
+            print("Starting HyperPod TUI...")
+            print("Press 'q' to quit once the interface loads.")
+        
         main()
     except KeyboardInterrupt:
-        print("\nExiting...")
+        if not test_mode:
+            print("\nExiting...")
     except ImportError as e:
         print(f"Import error: {e}")
         print("Make sure you're running from the project root directory")

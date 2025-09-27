@@ -8,6 +8,35 @@ from .aws_client import HyperPodClient
 from .config import config
 
 
+def safe_hline(stdscr, y, x, width):
+    """Safely draw a horizontal line, handling missing curses constants."""
+    try:
+        # Use a fallback character if ACS_HLINE is not available
+        try:
+            hline_char = curses.ACS_HLINE
+        except AttributeError:
+            hline_char = ord('-')
+        stdscr.hline(y, x, hline_char, width)
+    except (curses.error, AttributeError):
+        pass  # Skip border if we can't draw it
+
+
+def safe_color_pair(pair_number):
+    """Safely get a color pair, handling missing curses initialization."""
+    try:
+        return curses.color_pair(pair_number)
+    except (AttributeError, curses.error):
+        return 0  # Return no attributes if color pairs aren't available
+
+
+def safe_attr(attr_name):
+    """Safely get a curses attribute, handling missing curses initialization."""
+    try:
+        return getattr(curses, attr_name, 0)
+    except AttributeError:
+        return 0
+
+
 class TUIScreen:
     """Base class for TUI screens."""
     
@@ -28,13 +57,17 @@ class TUIScreen:
     
     def _init_colors(self):
         """Initialize color pairs."""
-        if curses.has_colors():
-            curses.start_color()
-            curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)    # Header/Footer
-            curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_WHITE)   # Selected
-            curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLACK)   # Normal
-            curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)     # Error
-            curses.init_pair(5, curses.COLOR_GREEN, curses.COLOR_BLACK)   # Info
+        try:
+            if curses.has_colors():
+                curses.start_color()
+                curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)    # Header/Footer
+                curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_WHITE)   # Selected
+                curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLACK)   # Normal
+                curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)     # Error
+                curses.init_pair(5, curses.COLOR_GREEN, curses.COLOR_BLACK)   # Info
+        except (curses.error, AttributeError):
+            # In test mode or if curses is not properly initialized
+            pass
     
     def _calculate_dimensions(self):
         """Calculate pane dimensions based on screen size."""
@@ -81,18 +114,18 @@ class TUIScreen:
     
     def draw_header(self):
         """Draw the header."""
-        self.stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
+        self.stdscr.attron(safe_color_pair(1) | safe_attr("A_BOLD"))
         header_text = f" HyperPod TUI - {self.title} "
         safe_header = header_text.ljust(self.width)[:self.width - 1]
         try:
             self.stdscr.addstr(self.header_y, 0, safe_header)
         except curses.error:
             pass  # Skip if we can't draw the header
-        self.stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
+        self.stdscr.attroff(safe_color_pair(1) | safe_attr("A_BOLD"))
     
     def draw_footer(self):
         """Draw the footer with key bindings."""
-        self.stdscr.attron(curses.color_pair(1))
+        self.stdscr.attron(safe_color_pair(1))
         footer_lines = [
             " q:Quit  Enter:Select  Backspace:Back  {}:Shrink  {}:Expand  r:Refresh ".format(
                 config.get('key_bindings.shrink_details', ['{'])[0],
@@ -117,20 +150,20 @@ class TUIScreen:
                     except curses.error:
                         pass  # Give up on this line
         
-        self.stdscr.attroff(curses.color_pair(1))
+        self.stdscr.attroff(safe_color_pair(1))
     
     def draw_filter(self):
         """Draw the filter input box."""
         filter_prompt = config.get('ui.filter_prompt', 'Filter: ')
         filter_line = f"{filter_prompt}{self.filter_text}"
         
-        self.stdscr.attron(curses.color_pair(3))
+        self.stdscr.attron(safe_color_pair(3))
         safe_filter = filter_line.ljust(self.width)[:self.width - 1]
         try:
             self.stdscr.addstr(self.filter_y, 0, safe_filter)
         except curses.error:
             pass  # Skip if we can't draw the filter
-        self.stdscr.attroff(curses.color_pair(3))
+        self.stdscr.attroff(safe_color_pair(3))
     
     def get_filtered_items(self, items: List[Any]) -> List[Any]:
         """Filter items based on filter text."""
@@ -251,10 +284,7 @@ class ClusterListScreen(TUIScreen):
             self.scroll_offset = self.selected_index - visible_count + 1
         
         # Draw border
-        try:
-            self.stdscr.hline(self.list_y, 0, curses.ACS_HLINE, self.width - 1)
-        except curses.error:
-            pass  # Skip border if we can't draw it
+        safe_hline(self.stdscr, self.list_y, 0, self.width - 1)
         
         # Draw clusters
         for i in range(visible_count):
@@ -273,7 +303,7 @@ class ClusterListScreen(TUIScreen):
                 cluster_line = f" {status_indicator} {cluster.name:<30} {cluster.status:<15}"
                 
                 if is_selected:
-                    self.stdscr.attron(curses.color_pair(2))
+                    self.stdscr.attron(safe_color_pair(2))
                 
                 safe_line = cluster_line.ljust(self.width)[:self.width - 1]
                 try:
@@ -282,17 +312,14 @@ class ClusterListScreen(TUIScreen):
                     pass  # Skip if we can't draw this line
                 
                 if is_selected:
-                    self.stdscr.attroff(curses.color_pair(2))
+                    self.stdscr.attroff(safe_color_pair(2))
             else:
                 self.stdscr.addstr(y, 0, " " * self.width)
     
     def draw_cluster_details(self):
         """Draw details of the selected cluster."""
         # Draw border
-        try:
-            self.stdscr.hline(self.details_y, 0, curses.ACS_HLINE, self.width - 1)
-        except curses.error:
-            pass  # Skip border if we can't draw it
+        safe_hline(self.stdscr, self.details_y, 0, self.width - 1)
         
         filtered_clusters = self.get_filtered_items(self.clusters)
         if not filtered_clusters or self.selected_index >= len(filtered_clusters):
@@ -377,7 +404,7 @@ class InstanceGroupListScreen(TUIScreen):
             self.scroll_offset = self.selected_index - visible_count + 1
         
         try:
-            self.stdscr.hline(self.list_y, 0, curses.ACS_HLINE, self.width - 1)
+            safe_hline(self.stdscr, self.list_y, 0, self.width - 1)
         except curses.error:
             pass  # Skip border if we can't draw it
         
@@ -396,7 +423,7 @@ class InstanceGroupListScreen(TUIScreen):
                 group_line = f" {status_indicator} {group.name:<25} {group.instance_type:<20} {group.current_count}/{group.target_count}"
                 
                 if is_selected:
-                    self.stdscr.attron(curses.color_pair(2))
+                    self.stdscr.attron(safe_color_pair(2))
                 
                 safe_line = group_line.ljust(self.width)[:self.width - 1]
                 try:
@@ -405,7 +432,7 @@ class InstanceGroupListScreen(TUIScreen):
                     pass  # Skip if we can't draw this line
                 
                 if is_selected:
-                    self.stdscr.attroff(curses.color_pair(2))
+                    self.stdscr.attroff(safe_color_pair(2))
             else:
                 safe_empty = " " * (self.width - 1)
                 try:
@@ -415,10 +442,7 @@ class InstanceGroupListScreen(TUIScreen):
     
     def draw_instance_group_details(self):
         """Draw details of the selected instance group."""
-        try:
-            self.stdscr.hline(self.details_y, 0, curses.ACS_HLINE, self.width - 1)
-        except curses.error:
-            pass  # Skip border if we can't draw it
+        safe_hline(self.stdscr, self.details_y, 0, self.width - 1)
         
         filtered_groups = self.get_filtered_items(self.instance_groups)
         if not filtered_groups or self.selected_index >= len(filtered_groups):
@@ -503,7 +527,7 @@ class InstanceListScreen(TUIScreen):
             self.scroll_offset = self.selected_index - visible_count + 1
         
         try:
-            self.stdscr.hline(self.list_y, 0, curses.ACS_HLINE, self.width - 1)
+            safe_hline(self.stdscr, self.list_y, 0, self.width - 1)
         except curses.error:
             pass  # Skip border if we can't draw it
         
@@ -522,7 +546,7 @@ class InstanceListScreen(TUIScreen):
                 instance_line = f" {status_indicator} {instance.instance_id:<20} {instance.instance_type:<20} {instance.status:<15}"
                 
                 if is_selected:
-                    self.stdscr.attron(curses.color_pair(2))
+                    self.stdscr.attron(safe_color_pair(2))
                 
                 safe_line = instance_line.ljust(self.width)[:self.width - 1]
                 try:
@@ -531,7 +555,7 @@ class InstanceListScreen(TUIScreen):
                     pass  # Skip if we can't draw this line
                 
                 if is_selected:
-                    self.stdscr.attroff(curses.color_pair(2))
+                    self.stdscr.attroff(safe_color_pair(2))
             else:
                 safe_empty = " " * (self.width - 1)
                 try:
@@ -541,10 +565,7 @@ class InstanceListScreen(TUIScreen):
     
     def draw_instance_details(self):
         """Draw details of the selected instance."""
-        try:
-            self.stdscr.hline(self.details_y, 0, curses.ACS_HLINE, self.width - 1)
-        except curses.error:
-            pass  # Skip border if we can't draw it
+        safe_hline(self.stdscr, self.details_y, 0, self.width - 1)
         
         filtered_instances = self.get_filtered_items(self.instances)
         if not filtered_instances or self.selected_index >= len(filtered_instances):

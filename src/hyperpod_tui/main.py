@@ -2,32 +2,36 @@
 
 import curses
 import sys
+import argparse
 from typing import List, Optional
 from .tui import ClusterListScreen, InstanceGroupListScreen, InstanceListScreen
 from .aws_client import HyperPodClient
 from .config import config
+from .test_framework import KeySequenceSimulator, MockStdscr
 
 
 class HyperPodTUI:
     """Main TUI application class."""
     
-    def __init__(self, stdscr):
+    def __init__(self, stdscr, test_mode: bool = False):
         self.stdscr = stdscr
         self.client = HyperPodClient()
         self.screen_stack: List = []
+        self.test_mode = test_mode
         
         # Configure curses - be more defensive about these calls
-        try:
-            curses.curs_set(0)  # Hide cursor
-        except curses.error:
-            pass  # Some terminals don't support cursor visibility control
-        
-        try:
-            self.stdscr.keypad(True)  # Enable special keys
-        except curses.error:
-            pass  # Some terminals don't support keypad
-        
-        self.stdscr.timeout(100)  # Non-blocking input with 100ms timeout
+        if not test_mode:
+            try:
+                curses.curs_set(0)  # Hide cursor
+            except curses.error:
+                pass  # Some terminals don't support cursor visibility control
+            
+            try:
+                self.stdscr.keypad(True)  # Enable special keys
+            except curses.error:
+                pass  # Some terminals don't support keypad
+            
+            self.stdscr.timeout(100)  # Non-blocking input with 100ms timeout
         
         # Start with cluster list screen
         self.current_screen = ClusterListScreen(stdscr, self.client)
@@ -128,18 +132,74 @@ class HyperPodTUI:
 
 def main():
     """Main entry point."""
-    try:
-        def run_tui(stdscr):
-            # Create and run the TUI
-            tui = HyperPodTUI(stdscr)
-            tui.run()
+    parser = argparse.ArgumentParser(description="HyperPod TUI - Terminal interface for AWS SageMaker HyperPod")
+    parser.add_argument("--test-key-seq", type=str, help="Key sequence for automated testing")
+    parser.add_argument("--test-scenario", type=str, help="Run a specific test scenario")
+    parser.add_argument("--list-tests", action="store_true", help="List available test scenarios")
+    parser.add_argument("--run-all-tests", action="store_true", help="Run all test scenarios")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output for testing")
+    
+    args = parser.parse_args()
+    
+    # Handle test-related arguments
+    if args.list_tests:
+        from .test_scenarios import list_available_tests
+        list_available_tests()
+        return
+    
+    if args.run_all_tests:
+        from .test_scenarios import create_test_runner
+        runner = create_test_runner(verbose=args.verbose)
+        reports = runner.run_all_tests()
+        runner.print_summary()
         
-        curses.wrapper(run_tui)
-    except Exception as e:
-        import traceback
-        print(f"Error starting HyperPod TUI: {e}", file=sys.stderr)
-        print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
-        sys.exit(1)
+        # Exit with error code if any tests failed
+        failed_tests = sum(1 for r in reports if r.result.value in ["FAIL", "ERROR"])
+        sys.exit(1 if failed_tests > 0 else 0)
+    
+    if args.test_scenario:
+        from .test_scenarios import run_specific_test
+        success = run_specific_test(args.test_scenario, verbose=args.verbose)
+        sys.exit(0 if success else 1)
+    
+    if args.test_key_seq:
+        # Run in test mode with key sequence
+        try:
+            simulator = KeySequenceSimulator(args.test_key_seq)
+            mock_stdscr = MockStdscr(simulator)
+            
+            if args.verbose:
+                print(f"Running TUI with key sequence: {args.test_key_seq}")
+            
+            tui = HyperPodTUI(mock_stdscr, test_mode=True)
+            tui.run()
+            
+            if args.verbose:
+                print("Test completed successfully")
+                print("\nScreen output buffer:")
+                for line in mock_stdscr.output_buffer[-20:]:  # Show last 20 lines
+                    print(f"  {line}")
+            
+        except Exception as e:
+            import traceback
+            print(f"Error running test: {e}", file=sys.stderr)
+            if args.verbose:
+                print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Run normally with curses
+        try:
+            def run_tui(stdscr):
+                # Create and run the TUI
+                tui = HyperPodTUI(stdscr)
+                tui.run()
+            
+            curses.wrapper(run_tui)
+        except Exception as e:
+            import traceback
+            print(f"Error starting HyperPod TUI: {e}", file=sys.stderr)
+            print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
