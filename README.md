@@ -44,6 +44,35 @@ On Windows, you'll need the `windows-curses` package:
 pip install windows-curses
 ```
 
+## AWS Setup
+
+### Configure AWS Credentials
+
+The application connects to real AWS SageMaker HyperPod clusters. You need to configure your AWS credentials using one of these methods:
+
+#### Option 1: AWS CLI (Recommended)
+```bash
+aws configure
+```
+
+#### Option 2: Environment Variables
+```bash
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_DEFAULT_REGION=us-east-1
+```
+
+#### Option 3: IAM Roles (for EC2 instances)
+If running on an EC2 instance, attach an IAM role with the required permissions.
+
+### Test Your Connection
+
+Before using the TUI, test your AWS connection:
+
+```bash
+python test_aws_integration.py
+```
+
 ## Usage
 
 ### Basic Usage
@@ -304,9 +333,24 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 5. Run the test suite
 6. Submit a pull request
 
+## Testing AWS Integration
+
+Before running the TUI, you can test your AWS connection:
+
+```bash
+# Test AWS integration
+python test_aws_integration.py
+```
+
+This will verify:
+- AWS credentials are properly configured
+- You have the necessary permissions
+- The application can connect to SageMaker HyperPod
+- Any existing clusters in your region
+
 ## Roadmap
 
-- [ ] Real AWS SageMaker HyperPod API integration
+- [x] Real AWS SageMaker HyperPod API integration
 - [ ] Job management interface
 - [ ] Log viewing capabilities
 - [ ] Cluster creation/deletion

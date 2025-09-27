@@ -1,8 +1,9 @@
 """AWS SageMaker HyperPod client."""
 
 import boto3
-from typing import List
+from typing import List, Optional
 from datetime import datetime
+from botocore.exceptions import ClientError, NoCredentialsError
 from .models import Cluster, InstanceGroup, Instance
 from .config import config
 
@@ -11,90 +12,160 @@ class HyperPodClient:
     """Client for interacting with AWS SageMaker HyperPod."""
     
     def __init__(self):
-        session = boto3.Session(
-            profile_name=config.get('aws.profile'),
-            region_name=config.get('aws.region', 'us-east-1')
-        )
-        self.sagemaker = session.client('sagemaker')
+        try:
+            session = boto3.Session(
+                profile_name=config.get('aws.profile'),
+                region_name=config.get('aws.region', 'us-east-1')
+            )
+            self.sagemaker = session.client('sagemaker')
+            self.region = config.get('aws.region', 'us-east-1')
+            self._test_connection()
+        except (NoCredentialsError, ClientError) as e:
+            print(f"AWS credentials error: {e}")
+            raise
+    
+    def _test_connection(self):
+        """Test AWS connection by making a simple API call."""
+        try:
+            # Test connection with a simple call
+            self.sagemaker.list_clusters(MaxResults=1)
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'UnauthorizedOperation':
+                print("Warning: No permission to list clusters. Some features may not work.")
+            else:
+                raise
     
     def list_clusters(self) -> List[Cluster]:
         """List all HyperPod clusters."""
-        # For demo purposes, return mock data
-        # In real implementation, this would call SageMaker API
-        return [
-            Cluster(
-                name="training-cluster-1",
-                arn="arn:aws:sagemaker:us-east-1:123456789012:cluster/training-cluster-1",
-                status="InService",
-                creation_time=datetime(2024, 1, 15, 10, 30, 0),
-                instance_groups=[
-                    InstanceGroup(
-                        name="worker-group",
-                        instance_type="ml.p4d.24xlarge",
-                        target_count=4,
-                        current_count=4,
-                        status="InService",
-                        instances=[
-                            Instance(
-                                instance_id="i-0123456789abcdef0",
-                                instance_type="ml.p4d.24xlarge",
-                                status="InService",
-                                availability_zone="us-east-1a",
-                                private_ip="10.0.1.100",
-                                launch_time=datetime(2024, 1, 15, 10, 35, 0)
-                            ),
-                            Instance(
-                                instance_id="i-0123456789abcdef1",
-                                instance_type="ml.p4d.24xlarge",
-                                status="InService",
-                                availability_zone="us-east-1b",
-                                private_ip="10.0.2.100",
-                                launch_time=datetime(2024, 1, 15, 10, 36, 0)
-                            )
-                        ]
-                    ),
-                    InstanceGroup(
-                        name="controller-group",
-                        instance_type="ml.m5.xlarge",
-                        target_count=1,
-                        current_count=1,
-                        status="InService",
-                        instances=[
-                            Instance(
-                                instance_id="i-0123456789abcdef2",
-                                instance_type="ml.m5.xlarge",
-                                status="InService",
-                                availability_zone="us-east-1a",
-                                private_ip="10.0.1.101",
-                                launch_time=datetime(2024, 1, 15, 10, 33, 0)
-                            )
-                        ]
-                    )
-                ]
-            ),
-            Cluster(
-                name="inference-cluster-1",
-                arn="arn:aws:sagemaker:us-east-1:123456789012:cluster/inference-cluster-1",
-                status="Creating",
-                creation_time=datetime(2024, 1, 20, 14, 15, 0),
-                instance_groups=[
-                    InstanceGroup(
-                        name="inference-group",
-                        instance_type="ml.g4dn.xlarge",
-                        target_count=2,
-                        current_count=1,
-                        status="Creating",
-                        instances=[
-                            Instance(
-                                instance_id="i-0123456789abcdef3",
-                                instance_type="ml.g4dn.xlarge",
-                                status="Pending",
-                                availability_zone="us-east-1c",
-                                private_ip="10.0.3.100",
-                                launch_time=datetime(2024, 1, 20, 14, 20, 0)
-                            )
-                        ]
-                    )
-                ]
+        try:
+            clusters = []
+            next_token = None
+            
+            # Handle pagination to get all clusters
+            while True:
+                # Prepare API call parameters
+                params = {'MaxResults': 100}
+                if next_token:
+                    params['NextToken'] = next_token
+                
+                response = self.sagemaker.list_clusters(**params)
+                
+                for cluster_summary in response.get('ClusterSummaries', []):
+                    try:
+                        # Get detailed cluster information
+                        cluster_detail = self.sagemaker.describe_cluster(
+                            ClusterName=cluster_summary['ClusterName']
+                        )
+                        
+                        # Parse instance groups
+                        instance_groups = []
+                        for ig in cluster_detail.get('InstanceGroups', []):
+                            instances = []
+                            
+                            # Get instances for this instance group
+                            # Note: SageMaker HyperPod doesn't directly expose individual instances
+                            # This is a simplified representation based on the instance group
+                            for i in range(ig.get('CurrentCount', 0)):
+                                instances.append(Instance(
+                                    instance_id=f"hyperpod-{cluster_summary['ClusterName']}-{ig['InstanceGroupName']}-{i}",
+                                    instance_type=ig['InstanceType'],
+                                    status="InService" if cluster_summary['ClusterStatus'] == 'InService' else "Pending",
+                                    availability_zone="N/A",  # Not directly available from HyperPod API
+                                    private_ip="N/A",  # Not directly available from HyperPod API
+                                    launch_time=cluster_summary.get('CreationTime', datetime.now())
+                                ))
+                            
+                            instance_groups.append(InstanceGroup(
+                                name=ig['InstanceGroupName'],
+                                instance_type=ig['InstanceType'],
+                                target_count=ig.get('TargetCount', 0),
+                                current_count=ig.get('CurrentCount', 0),
+                                status=cluster_summary['ClusterStatus'],
+                                instances=instances
+                            ))
+                        
+                        clusters.append(Cluster(
+                            name=cluster_summary['ClusterName'],
+                            arn=cluster_summary['ClusterArn'],
+                            status=cluster_summary['ClusterStatus'],
+                            creation_time=cluster_summary.get('CreationTime', datetime.now()),
+                            instance_groups=instance_groups
+                        ))
+                        
+                    except Exception as e:
+                        # Continue with other clusters even if one fails
+                        # Log error but don't print to stdout (interferes with TUI)
+                        continue
+                
+                # Check if there are more pages
+                next_token = response.get('NextToken')
+                if not next_token:
+                    break
+            
+            return clusters
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code == 'UnauthorizedOperation':
+                print("Error: No permission to list clusters. Check your AWS credentials and permissions.")
+            else:
+                print(f"AWS API error: {e}")
+            return []
+        except Exception as e:
+            # If there's an error (e.g., no AWS credentials, no clusters, etc.)
+            # Return empty list and let the UI handle it gracefully
+            # Note: Don't print to stdout as it interferes with the TUI
+            return []
+    
+    def get_cluster_details(self, cluster_name: str) -> Optional[Cluster]:
+        """Get detailed information about a specific cluster."""
+        try:
+            response = self.sagemaker.describe_cluster(ClusterName=cluster_name)
+            
+            # Parse instance groups
+            instance_groups = []
+            for ig in response.get('InstanceGroups', []):
+                instances = []
+                
+                # Create instance representations
+                for i in range(ig.get('CurrentCount', 0)):
+                    instances.append(Instance(
+                        instance_id=f"hyperpod-{cluster_name}-{ig['InstanceGroupName']}-{i}",
+                        instance_type=ig['InstanceType'],
+                        status="InService" if response['ClusterStatus'] == 'InService' else "Pending",
+                        availability_zone="N/A",
+                        private_ip="N/A",
+                        launch_time=response.get('CreationTime', datetime.now())
+                    ))
+                
+                instance_groups.append(InstanceGroup(
+                    name=ig['InstanceGroupName'],
+                    instance_type=ig['InstanceType'],
+                    target_count=ig.get('TargetCount', 0),
+                    current_count=ig.get('CurrentCount', 0),
+                    status=response['ClusterStatus'],
+                    instances=instances
+                ))
+            
+            return Cluster(
+                name=response['ClusterName'],
+                arn=response['ClusterArn'],
+                status=response['ClusterStatus'],
+                creation_time=response.get('CreationTime', datetime.now()),
+                instance_groups=instance_groups
             )
-        ]
+            
+        except ClientError as e:
+            print(f"Error fetching cluster details for {cluster_name}: {e}")
+            return None
+        except Exception as e:
+            print(f"Unexpected error fetching cluster details: {e}")
+            return None
+    
+    def is_connected(self) -> bool:
+        """Check if the client can connect to AWS."""
+        try:
+            self.sagemaker.list_clusters(MaxResults=1)
+            return True
+        except Exception:
+            return False

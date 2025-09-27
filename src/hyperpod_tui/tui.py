@@ -286,6 +286,24 @@ class ClusterListScreen(TUIScreen):
         # Draw border
         safe_hline(self.stdscr, self.list_y, 0, self.width - 1)
         
+        # Handle empty cluster list
+        if not filtered_clusters:
+            y = self.list_y + 1
+            if not self.clusters:
+                # No clusters at all
+                message = "No HyperPod clusters found. Press 'r' to refresh."
+                if not self.client.is_connected():
+                    message = "Unable to connect to AWS. Check your credentials and try again (r)."
+            else:
+                # Clusters exist but filtered out
+                message = f"No clusters match filter '{self.filter_text}'. Press 'x' to clear filter."
+            
+            try:
+                self.stdscr.addstr(y, 2, message[:self.width - 4])
+            except curses.error:
+                pass
+            return
+        
         # Draw clusters
         for i in range(visible_count):
             cluster_index = self.scroll_offset + i
@@ -314,7 +332,10 @@ class ClusterListScreen(TUIScreen):
                 if is_selected:
                     self.stdscr.attroff(safe_color_pair(2))
             else:
-                self.stdscr.addstr(y, 0, " " * self.width)
+                try:
+                    self.stdscr.addstr(y, 0, " " * (self.width - 1))
+                except curses.error:
+                    pass
     
     def draw_cluster_details(self):
         """Draw details of the selected cluster."""
@@ -323,6 +344,16 @@ class ClusterListScreen(TUIScreen):
         
         filtered_clusters = self.get_filtered_items(self.clusters)
         if not filtered_clusters or self.selected_index >= len(filtered_clusters):
+            # Show helpful message when no cluster is selected
+            y = self.details_y + 1
+            if not self.clusters:
+                message = "No cluster details available."
+            else:
+                message = "No cluster selected."
+            try:
+                self.stdscr.addstr(y, 2, message)
+            except curses.error:
+                pass
             return
         
         cluster = filtered_clusters[self.selected_index]
