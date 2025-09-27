@@ -15,10 +15,13 @@ DEFAULT_CONFIG = {
         "shrink_details": ["{"],
         "up": ["KEY_UP", "k"],
         "down": ["KEY_DOWN", "j"],
+        "left": ["KEY_LEFT", "h"],
+        "right": ["KEY_RIGHT", "l"],
         "page_up": ["KEY_PPAGE"],
         "page_down": ["KEY_NPAGE"],
         "home": ["KEY_HOME"],
         "end": ["KEY_END"],
+        "delete": ["KEY_DC"],
         "clear_filter": ["KEY_DC", "x"],
         "refresh": ["r", "R", "KEY_F5"]
     },
@@ -27,7 +30,7 @@ DEFAULT_CONFIG = {
         "min_details_height": 3,
         "max_details_height": 0.8,  # 80% of screen height
         "filter_prompt": "Filter: ",
-        "search_prompt": "Search: ",
+        "search_prompt": "Filter: ",
         "colors": {
             "header": "cyan",
             "footer": "cyan", 

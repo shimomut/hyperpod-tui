@@ -49,6 +49,7 @@ class TUIScreen:
         self.scroll_offset = 0
         self.details_height_ratio = config.get('ui.default_details_height', 0.3)
         self.search_mode = False  # Track if we're in incremental search mode
+        self.caret_position = 0  # Position of caret in search text
         
         # Calculate pane dimensions
         self._calculate_dimensions()
@@ -66,6 +67,7 @@ class TUIScreen:
                 curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLACK)   # Normal
                 curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)     # Error
                 curses.init_pair(5, curses.COLOR_GREEN, curses.COLOR_BLACK)   # Info
+                curses.init_pair(6, curses.COLOR_WHITE, curses.COLOR_BLACK)   # Bright white for search mode
         except (curses.error, AttributeError):
             # In test mode or if curses is not properly initialized
             pass
@@ -148,7 +150,7 @@ class TUIScreen:
         if self.search_mode:
             footer_lines = [
                 " Search Mode: Type to filter  Enter:Select  ESC:Cancel ",
-                " ↑↓:Navigate while searching  Backspace:Delete character "
+                " ↑↓:Navigate  ←→:Move caret  Backspace:Delete  Del:Delete at caret "
             ]
         else:
             footer_lines = [
@@ -178,11 +180,11 @@ class TUIScreen:
         self.stdscr.attroff(safe_color_pair(1))
     
     def draw_filter(self):
-        """Draw the filter input box."""
+        """Draw the filter input box with caret support."""
         if self.search_mode:
-            filter_prompt = config.get('ui.search_prompt', 'Search: ')
-            # Use different color for search mode
-            color_pair = safe_color_pair(5)  # Green for search mode
+            filter_prompt = config.get('ui.search_prompt', 'Filter: ')
+            # Use bright white color for search mode
+            color_pair = safe_color_pair(6) | safe_attr("A_BOLD")  # Bright white for search mode
         else:
             filter_prompt = config.get('ui.filter_prompt', 'Filter: ')
             color_pair = safe_color_pair(3)  # Normal color
@@ -191,13 +193,83 @@ class TUIScreen:
         if not self.search_mode and not self.filter_text:
             filter_line += " (Press 'f' to search)"
         
-        self.stdscr.attron(color_pair)
-        safe_filter = filter_line.ljust(self.width)[:self.width - 1]
-        try:
-            self.stdscr.addstr(self.filter_y, 0, safe_filter)
-        except curses.error:
-            pass  # Skip if we can't draw the filter
-        self.stdscr.attroff(color_pair)
+        if self.search_mode:
+            # In search mode, draw prompt and text with bright white color
+            self.stdscr.attron(color_pair)
+            
+            # Draw the prompt
+            try:
+                self.stdscr.addstr(self.filter_y, 0, filter_prompt)
+            except curses.error:
+                pass
+            
+            # Draw the text with caret
+            prompt_len = len(filter_prompt)
+            text_start_x = prompt_len
+            
+            # Ensure caret position is within bounds
+            self.caret_position = max(0, min(self.caret_position, len(self.filter_text)))
+            
+            # Draw text before caret
+            if self.caret_position > 0:
+                before_caret = self.filter_text[:self.caret_position]
+                try:
+                    self.stdscr.addstr(self.filter_y, text_start_x, before_caret)
+                except curses.error:
+                    pass
+            
+            # Draw caret (character at caret position with inverted colors)
+            caret_x = text_start_x + self.caret_position
+            if caret_x < self.width - 1:  # Ensure we don't go beyond screen width
+                if self.caret_position < len(self.filter_text):
+                    # Caret is on an existing character - invert it
+                    caret_char = self.filter_text[self.caret_position]
+                else:
+                    # Caret is at the end - show a space with inverted colors
+                    caret_char = ' '
+                
+                # Invert colors for caret - turn off bright white first, then apply inversion
+                try:
+                    self.stdscr.attroff(color_pair)
+                    self.stdscr.attron(safe_color_pair(2))  # Use selected color pair for inversion
+                    self.stdscr.addstr(self.filter_y, caret_x, caret_char)
+                    self.stdscr.attroff(safe_color_pair(2))
+                    self.stdscr.attron(color_pair)  # Restore bright white for remaining text
+                except curses.error:
+                    pass
+            
+            # Draw text after caret
+            if self.caret_position < len(self.filter_text):
+                after_caret = self.filter_text[self.caret_position + 1:]
+                after_caret_x = text_start_x + self.caret_position + 1
+                if after_caret and after_caret_x < self.width - 1:
+                    try:
+                        self.stdscr.addstr(self.filter_y, after_caret_x, after_caret)
+                    except curses.error:
+                        pass
+            
+            # Fill the rest of the line with normal background
+            remaining_start = text_start_x + len(self.filter_text) + (1 if self.caret_position >= len(self.filter_text) else 0)
+            if remaining_start < self.width:
+                remaining_spaces = " " * (self.width - remaining_start - 1)
+                try:
+                    self.stdscr.attroff(color_pair)  # Turn off bright white for background
+                    self.stdscr.attron(safe_color_pair(3))  # Use normal color for background
+                    self.stdscr.addstr(self.filter_y, remaining_start, remaining_spaces)
+                    self.stdscr.attroff(safe_color_pair(3))
+                except curses.error:
+                    pass
+            
+            self.stdscr.attroff(color_pair)
+        else:
+            # Normal mode - draw as before
+            self.stdscr.attron(color_pair)
+            safe_filter = filter_line.ljust(self.width)[:self.width - 1]
+            try:
+                self.stdscr.addstr(self.filter_y, 0, safe_filter)
+            except curses.error:
+                pass  # Skip if we can't draw the filter
+            self.stdscr.attroff(color_pair)
     
     def get_filtered_items(self, items: List[Any]) -> List[Any]:
         """Filter items based on filter text."""
@@ -226,12 +298,30 @@ class TUIScreen:
             # Enter key - select current item and exit search mode
             if key in config.get('key_bindings.enter', ['\n', '\r']):
                 self.search_mode = False
+                self.caret_position = 0
                 return 'enter'
             
             # Escape key - cancel search and exit search mode
             elif key == '\x1b':  # ESC key
                 self.search_mode = False
+                self.caret_position = 0
                 return 'search_cancelled'
+            
+            # Caret movement keys
+            elif key in config.get('key_bindings.left', ['KEY_LEFT', 'h']):
+                self.caret_position = max(0, self.caret_position - 1)
+                return None  # No need to refresh filter
+            elif key in config.get('key_bindings.right', ['KEY_RIGHT', 'l']):
+                self.caret_position = min(len(self.filter_text), self.caret_position + 1)
+                return None  # No need to refresh filter
+            
+            # Home/End keys for caret positioning
+            elif key in config.get('key_bindings.home', ['KEY_HOME']):
+                self.caret_position = 0
+                return None
+            elif key in config.get('key_bindings.end', ['KEY_END']):
+                self.caret_position = len(self.filter_text)
+                return None
             
             # Navigation keys work even in search mode
             elif key in config.get('key_bindings.up', ['KEY_UP', 'k']):
@@ -239,16 +329,30 @@ class TUIScreen:
             elif key in config.get('key_bindings.down', ['KEY_DOWN', 'j']):
                 return 'down'
             
-            # Backspace in search mode - handle multiple backspace representations
-            elif self._is_backspace_key(key) and self.filter_text:
-                self.filter_text = self.filter_text[:-1]
+            # Backspace in search mode - delete character before caret
+            elif self._is_backspace_key(key) and self.caret_position > 0:
+                self.filter_text = (self.filter_text[:self.caret_position - 1] + 
+                                  self.filter_text[self.caret_position:])
+                self.caret_position -= 1
                 self.selected_index = 0
                 self.scroll_offset = 0
                 return 'filter_changed'
             
-            # Add printable characters to search
+            # Delete key - delete character at caret position
+            elif key in config.get('key_bindings.delete', ['KEY_DC']):
+                if self.caret_position < len(self.filter_text):
+                    self.filter_text = (self.filter_text[:self.caret_position] + 
+                                      self.filter_text[self.caret_position + 1:])
+                    self.selected_index = 0
+                    self.scroll_offset = 0
+                    return 'filter_changed'
+            
+            # Add printable characters to search at caret position
             elif len(key) == 1 and key.isprintable():
-                self.filter_text += key
+                self.filter_text = (self.filter_text[:self.caret_position] + 
+                                  key + 
+                                  self.filter_text[self.caret_position:])
+                self.caret_position += 1
                 self.selected_index = 0
                 self.scroll_offset = 0
                 return 'filter_changed'
@@ -263,6 +367,7 @@ class TUIScreen:
         # Start search mode with 'f' key
         elif key in ['f', 'F']:
             self.search_mode = True
+            self.caret_position = len(self.filter_text)  # Position caret at end of existing text
             return 'search_started'
         
         # Navigation
