@@ -94,6 +94,15 @@ class HyperPodTUI:
             self.current_screen.filter_text = ""
             self.current_screen.selected_index = 0
             self.current_screen.scroll_offset = 0
+            self.current_screen.search_mode = False
+        
+        elif action == 'search_started':
+            # Search mode started, screen will redraw automatically
+            pass
+        
+        elif action == 'search_cancelled':
+            # Search mode cancelled, screen will redraw automatically
+            pass
         
         elif action == 'filter_changed':
             # Filter was updated, screen will redraw automatically

@@ -48,6 +48,7 @@ class TUIScreen:
         self.selected_index = 0
         self.scroll_offset = 0
         self.details_height_ratio = config.get('ui.default_details_height', 0.3)
+        self.search_mode = False  # Track if we're in incremental search mode
         
         # Calculate pane dimensions
         self._calculate_dimensions()
@@ -126,13 +127,20 @@ class TUIScreen:
     def draw_footer(self):
         """Draw the footer with key bindings."""
         self.stdscr.attron(safe_color_pair(1))
-        footer_lines = [
-            " q:Quit  Enter:Select  Backspace:Back  {}:Shrink  {}:Expand  r:Refresh ".format(
-                config.get('key_bindings.shrink_details', ['{'])[0],
-                config.get('key_bindings.expand_details', ['}'])[0]
-            ),
-            " ↑↓:Navigate  PgUp/PgDn:Page  Home/End:First/Last  Del/x:Clear Filter "
-        ]
+        
+        if self.search_mode:
+            footer_lines = [
+                " Search Mode: Type to filter  Enter:Select  ESC:Cancel ",
+                " ↑↓:Navigate while searching  Backspace:Delete character "
+            ]
+        else:
+            footer_lines = [
+                " q:Quit  Enter:Select  Backspace:Back  {}:Shrink  {}:Expand  r:Refresh ".format(
+                    config.get('key_bindings.shrink_details', ['{'])[0],
+                    config.get('key_bindings.expand_details', ['}'])[0]
+                ),
+                " ↑↓:Navigate  PgUp/PgDn:Page  Home/End:First/Last  f:Search  Del/x:Clear Filter "
+            ]
         
         for i, line in enumerate(footer_lines):
             y = self.footer_y + i
@@ -154,16 +162,25 @@ class TUIScreen:
     
     def draw_filter(self):
         """Draw the filter input box."""
-        filter_prompt = config.get('ui.filter_prompt', 'Filter: ')
-        filter_line = f"{filter_prompt}{self.filter_text}"
+        if self.search_mode:
+            filter_prompt = config.get('ui.search_prompt', 'Search: ')
+            # Use different color for search mode
+            color_pair = safe_color_pair(5)  # Green for search mode
+        else:
+            filter_prompt = config.get('ui.filter_prompt', 'Filter: ')
+            color_pair = safe_color_pair(3)  # Normal color
         
-        self.stdscr.attron(safe_color_pair(3))
+        filter_line = f"{filter_prompt}{self.filter_text}"
+        if not self.search_mode and not self.filter_text:
+            filter_line += " (Press 'f' to search)"
+        
+        self.stdscr.attron(color_pair)
         safe_filter = filter_line.ljust(self.width)[:self.width - 1]
         try:
             self.stdscr.addstr(self.filter_y, 0, safe_filter)
         except curses.error:
             pass  # Skip if we can't draw the filter
-        self.stdscr.attroff(safe_color_pair(3))
+        self.stdscr.attroff(color_pair)
     
     def get_filtered_items(self, items: List[Any]) -> List[Any]:
         """Filter items based on filter text."""
@@ -187,9 +204,49 @@ class TUIScreen:
     
     def handle_key(self, key: str) -> Optional[str]:
         """Handle key input. Returns action or None."""
+        # Handle search mode keys first
+        if self.search_mode:
+            # Enter key - select current item and exit search mode
+            if key in config.get('key_bindings.enter', ['\n', '\r']):
+                self.search_mode = False
+                return 'enter'
+            
+            # Escape key - cancel search and exit search mode
+            elif key == '\x1b':  # ESC key
+                self.search_mode = False
+                return 'search_cancelled'
+            
+            # Navigation keys work even in search mode
+            elif key in config.get('key_bindings.up', ['KEY_UP', 'k']):
+                return 'up'
+            elif key in config.get('key_bindings.down', ['KEY_DOWN', 'j']):
+                return 'down'
+            
+            # Backspace in search mode
+            elif key == 'KEY_BACKSPACE' and self.filter_text:
+                self.filter_text = self.filter_text[:-1]
+                self.selected_index = 0
+                self.scroll_offset = 0
+                return 'filter_changed'
+            
+            # Add printable characters to search
+            elif len(key) == 1 and key.isprintable():
+                self.filter_text += key
+                self.selected_index = 0
+                self.scroll_offset = 0
+                return 'filter_changed'
+            
+            return None
+        
+        # Normal mode (not in search)
         # Quit
         if key in config.get('key_bindings.quit', ['q', 'Q']):
             return 'quit'
+        
+        # Start search mode with 'f' key
+        elif key in ['f', 'F']:
+            self.search_mode = True
+            return 'search_started'
         
         # Navigation
         elif key in config.get('key_bindings.up', ['KEY_UP', 'k']):
@@ -222,16 +279,6 @@ class TUIScreen:
         # Filter management
         elif key in config.get('key_bindings.clear_filter', ['KEY_DC', 'x']):
             return 'clear_filter'
-        elif key == 'KEY_BACKSPACE' and self.filter_text:
-            self.filter_text = self.filter_text[:-1]
-            self.selected_index = 0
-            self.scroll_offset = 0
-            return 'filter_changed'
-        elif len(key) == 1 and key.isprintable():
-            self.filter_text += key
-            self.selected_index = 0
-            self.scroll_offset = 0
-            return 'filter_changed'
         
         return None
 

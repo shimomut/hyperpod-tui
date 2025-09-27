@@ -27,6 +27,7 @@ DEFAULT_CONFIG = {
         "min_details_height": 3,
         "max_details_height": 0.8,  # 80% of screen height
         "filter_prompt": "Filter: ",
+        "search_prompt": "Search: ",
         "colors": {
             "header": "cyan",
             "footer": "cyan", 

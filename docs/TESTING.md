@@ -93,6 +93,22 @@ Special keys are enclosed in angle brackets:
 "<F1>"        # Function keys F1-F12
 ```
 
+### Search Mode Keys
+The TUI now supports incremental search mode:
+
+```
+"f"           # Enter search mode
+"<ESC>"       # Exit search mode (cancel)
+"<ENTER>"     # Exit search mode (select)
+```
+
+In search mode:
+- Type characters to filter results
+- Use `<UP>` and `<DOWN>` to navigate filtered results
+- `<BACKSPACE>` removes characters from search
+- `<ENTER>` selects current item and exits search mode
+- `<ESC>` cancels search and exits search mode
+
 ### Escape Sequences
 ```
 "\\n"         # Newline
@@ -103,14 +119,17 @@ Special keys are enclosed in angle brackets:
 
 ### Complex Examples
 ```bash
-# Navigate and filter
-python test_tui.py --key-seq "<DOWN><DOWN>test<DELETE><ENTER>q"
+# Navigate and use new search mode
+python test_tui.py --key-seq "<DOWN><DOWN>f test<ENTER>q"
 
 # Multi-level navigation
 python test_tui.py --key-seq "<DOWN><ENTER><DOWN><ENTER><BACKSPACE><BACKSPACE>q"
 
-# Filter and clear
-python test_tui.py --key-seq "production<BACKSPACE><BACKSPACE><BACKSPACE>dev<DELETE>q"
+# Search mode with cancel
+python test_tui.py --key-seq "f production<ESC>f dev<ENTER>q"
+
+# Old-style filter clearing (still works)
+python test_tui.py --key-seq "f test<DELETE>q"
 ```
 
 ## Predefined Test Scenarios
