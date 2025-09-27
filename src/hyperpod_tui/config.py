@@ -31,6 +31,7 @@ DEFAULT_CONFIG = {
         "max_details_height": 0.8,  # 80% of screen height
         "filter_prompt": "Filter: ",
         "search_prompt": "Filter: ",
+        "esc_delay": 25,  # ESC key timeout in milliseconds (25ms for responsive ESC)
         "colors": {
             "header": "cyan",
             "footer": "cyan", 

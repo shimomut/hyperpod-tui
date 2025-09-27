@@ -2,10 +2,37 @@
 
 import curses
 import fnmatch
+import os
 from typing import List, Dict, Any, Optional, Union
 from .models import Cluster, InstanceGroup, Instance
 from .aws_client import HyperPodClient
 from .config import config
+
+
+def setup_esc_delay():
+    """
+    Set up ESC key delay for responsive ESC key handling.
+    
+    The ESC key is used to start escape sequences in terminals (like arrow keys).
+    By default, terminals wait up to 1000ms to see if ESC is part of a sequence.
+    This makes standalone ESC presses feel very slow.
+    
+    This function sets a much shorter delay for better responsiveness.
+    """
+    # Get configured ESC delay (default 25ms)
+    esc_delay = config.get('ui.esc_delay', 25)
+    
+    # Set environment variable if not already set
+    if 'ESCDELAY' not in os.environ:
+        os.environ['ESCDELAY'] = str(esc_delay)
+    
+    # Set programmatically if available (Python 3.9+)
+    try:
+        curses.set_escdelay(esc_delay)
+    except AttributeError:
+        # Older Python versions don't have set_escdelay
+        # The environment variable will still work
+        pass
 
 
 def safe_hline(stdscr, y, x, width):
@@ -41,6 +68,9 @@ class TUIScreen:
     """Base class for TUI screens."""
     
     def __init__(self, stdscr, title: str):
+        # Set up responsive ESC key handling
+        setup_esc_delay()
+        
         self.stdscr = stdscr
         self.title = title
         self.height, self.width = stdscr.getmaxyx()
