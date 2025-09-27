@@ -29,6 +29,16 @@ def validate_filter_cleared(app, mock_stdscr):
     return len(app.current_screen.filter_text) == 0
 
 
+def validate_search_mode_active(app, mock_stdscr):
+    """Validate that search mode is active."""
+    return app.current_screen.search_mode
+
+
+def validate_search_mode_inactive(app, mock_stdscr):
+    """Validate that search mode is inactive."""
+    return not app.current_screen.search_mode
+
+
 # Test Scenarios
 BASIC_NAVIGATION_TEST = TestCase(
     name="basic_navigation",
@@ -54,6 +64,22 @@ FILTER_TEST = TestCase(
         TestStep("prod", "Apply filter 'prod'", validator=validate_filter_applied),
         TestStep("x", "Clear filter with 'x' key", validator=validate_filter_cleared),
         TestStep("dev<BACKSPACE><BACKSPACE><BACKSPACE>", "Type and backspace filter", validator=validate_filter_cleared),
+        TestStep("q", "Quit application", delay_ms=100),
+    ]
+)
+
+SEARCH_MODE_ESC_TEST = TestCase(
+    name="search_mode_esc_behavior",
+    description="Test ESC key behavior in incremental search mode",
+    steps=[
+        TestStep("", "Start on cluster list screen", validator=validate_cluster_screen),
+        TestStep("f", "Enter search mode", validator=validate_search_mode_active),
+        TestStep("test_filter", "Type filter text", validator=validate_filter_applied),
+        TestStep("<ESC>", "First ESC should clear filter but stay in search mode", 
+                validator=lambda app, scr: validate_search_mode_active(app, scr) and validate_filter_cleared(app, scr)),
+        TestStep("<ESC>", "Second ESC should exit search mode", validator=validate_search_mode_inactive),
+        TestStep("f", "Enter search mode again", validator=validate_search_mode_active),
+        TestStep("<ESC>", "ESC with empty filter should exit search mode immediately", validator=validate_search_mode_inactive),
         TestStep("q", "Quit application", delay_ms=100),
     ]
 )
@@ -156,6 +182,7 @@ def get_all_test_scenarios():
         QUICK_EXIT_TEST,
         BASIC_NAVIGATION_TEST,
         FILTER_TEST,
+        SEARCH_MODE_ESC_TEST,
         KEYBOARD_SHORTCUTS_TEST,
         DRILL_DOWN_TEST,
         EDGE_CASES_TEST,

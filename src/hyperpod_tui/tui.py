@@ -301,11 +301,20 @@ class TUIScreen:
                 self.caret_position = 0
                 return 'enter'
             
-            # Escape key - cancel search and exit search mode
+            # Escape key - first clear filter text, then exit search mode
             elif key == '\x1b':  # ESC key
-                self.search_mode = False
-                self.caret_position = 0
-                return 'search_cancelled'
+                if self.filter_text:
+                    # If there's filter text, clear it first
+                    self.filter_text = ""
+                    self.caret_position = 0
+                    self.selected_index = 0
+                    self.scroll_offset = 0
+                    return 'filter_changed'
+                else:
+                    # If filter text is already empty, exit search mode
+                    self.search_mode = False
+                    self.caret_position = 0
+                    return 'search_cancelled'
             
             # Caret movement keys
             elif key in config.get('key_bindings.left', ['KEY_LEFT', 'h']):

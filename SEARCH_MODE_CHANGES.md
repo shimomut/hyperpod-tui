@@ -32,7 +32,7 @@ This document describes the implementation of the new incremental search mode fo
 - **Up/Down arrows**: Navigate through filtered results
 - **Backspace**: Remove characters from search
 - **Enter**: Select current item and exit search mode
-- **ESC**: Cancel search and exit search mode
+- **ESC**: First press clears filter text, second press exits search mode
 
 #### Visual Feedback
 - Search prompt: "Search: [text]" (green color)
@@ -79,7 +79,7 @@ This document describes the implementation of the new incremental search mode fo
 
 #### New Key Bindings
 - **'f' or 'F'**: Enter incremental search mode
-- **ESC (in search mode)**: Cancel search and exit search mode
+- **ESC (in search mode)**: First press clears filter text, second press exits search mode
 - **Enter (in search mode)**: Select item and exit search mode
 
 #### Preserved Key Bindings
@@ -117,7 +117,7 @@ The implementation maintains full backward compatibility:
 2. Press 'f' to enter search mode
 3. Type search terms (e.g., "prod")
 4. Use Up/Down to navigate results
-5. Press Enter to select, or ESC to cancel
+5. Press Enter to select, or ESC to clear filter (ESC again to exit)
 ```
 
 ### Key Sequence Examples
@@ -125,8 +125,11 @@ The implementation maintains full backward compatibility:
 # Search and select
 python run.py --test-key-seq "f production<DOWN><ENTER>q"
 
-# Search and cancel
-python run.py --test-key-seq "f test<ESC>q"
+# Search and cancel (clear filter first, then exit)
+python run.py --test-key-seq "f test<ESC><ESC>q"
+
+# Search, clear filter, continue searching
+python run.py --test-key-seq "f test<ESC>prod<ENTER>q"
 
 # Multiple searches
 python run.py --test-key-seq "f cluster<ENTER>f instance<DOWN><ENTER>q"
@@ -173,6 +176,44 @@ Potential future improvements that build on this foundation:
 3. **UI consistency**: Consistent visual feedback across screens
 4. **Error handling**: Graceful handling of edge cases
 5. **Performance**: No impact on normal navigation performance
+
+## Recent Enhancements
+
+### ESC Key Behavior Enhancement (New)
+
+**Enhancement**: Improved ESC key behavior in incremental search mode to provide more intuitive user experience.
+
+**New Behavior**: 
+1. **First ESC press**: Clears the filter text but remains in search mode
+2. **Second ESC press**: Exits search mode (only if filter text is already empty)
+
+**Benefits**:
+- Users can quickly clear their search without exiting search mode
+- Allows for easy correction of search terms without mode switching
+- More forgiving workflow - accidental ESC doesn't immediately exit search
+- Follows common UI patterns found in other applications
+
+**Implementation Details**:
+- Modified `handle_key()` method in `TUIScreen` class
+- Added logic to check if filter text exists before deciding ESC action
+- Maintains all existing search mode functionality
+- Resets caret position and selection when clearing filter
+
+**Usage Examples**:
+```
+# Clear filter and continue searching
+1. Press 'f' to enter search mode
+2. Type "wrong_search"
+3. Press ESC to clear (stays in search mode)
+4. Type "correct_search"
+5. Press Enter to select
+
+# Exit search mode
+1. Press 'f' to enter search mode  
+2. Press ESC twice to exit (or ESC once if no filter text)
+```
+
+**Testing**: Added comprehensive test case `SEARCH_MODE_ESC_TEST` to validate the new behavior.
 
 ## Bug Fixes
 
