@@ -83,7 +83,11 @@ class TUIScreen:
         """Draw the header."""
         self.stdscr.attron(curses.color_pair(1) | curses.A_BOLD)
         header_text = f" HyperPod TUI - {self.title} "
-        self.stdscr.addstr(self.header_y, 0, header_text.ljust(self.width))
+        safe_header = header_text.ljust(self.width)[:self.width - 1]
+        try:
+            self.stdscr.addstr(self.header_y, 0, safe_header)
+        except curses.error:
+            pass  # Skip if we can't draw the header
         self.stdscr.attroff(curses.color_pair(1) | curses.A_BOLD)
     
     def draw_footer(self):
@@ -100,7 +104,18 @@ class TUIScreen:
         for i, line in enumerate(footer_lines):
             y = self.footer_y + i
             if y < self.height:
-                self.stdscr.addstr(y, 0, line.ljust(self.width))
+                # Ensure we don't write to the last column of the last row
+                safe_line = line.ljust(self.width)
+                if y == self.height - 1:
+                    safe_line = safe_line[:self.width - 1]
+                try:
+                    self.stdscr.addstr(y, 0, safe_line)
+                except curses.error:
+                    # If we still can't write, try without the last character
+                    try:
+                        self.stdscr.addstr(y, 0, safe_line[:-1])
+                    except curses.error:
+                        pass  # Give up on this line
         
         self.stdscr.attroff(curses.color_pair(1))
     
@@ -110,7 +125,11 @@ class TUIScreen:
         filter_line = f"{filter_prompt}{self.filter_text}"
         
         self.stdscr.attron(curses.color_pair(3))
-        self.stdscr.addstr(self.filter_y, 0, filter_line.ljust(self.width))
+        safe_filter = filter_line.ljust(self.width)[:self.width - 1]
+        try:
+            self.stdscr.addstr(self.filter_y, 0, safe_filter)
+        except curses.error:
+            pass  # Skip if we can't draw the filter
         self.stdscr.attroff(curses.color_pair(3))
     
     def get_filtered_items(self, items: List[Any]) -> List[Any]:
@@ -232,7 +251,10 @@ class ClusterListScreen(TUIScreen):
             self.scroll_offset = self.selected_index - visible_count + 1
         
         # Draw border
-        self.stdscr.hline(self.list_y, 0, curses.ACS_HLINE, self.width)
+        try:
+            self.stdscr.hline(self.list_y, 0, curses.ACS_HLINE, self.width - 1)
+        except curses.error:
+            pass  # Skip border if we can't draw it
         
         # Draw clusters
         for i in range(visible_count):
@@ -253,7 +275,11 @@ class ClusterListScreen(TUIScreen):
                 if is_selected:
                     self.stdscr.attron(curses.color_pair(2))
                 
-                self.stdscr.addstr(y, 0, cluster_line.ljust(self.width))
+                safe_line = cluster_line.ljust(self.width)[:self.width - 1]
+                try:
+                    self.stdscr.addstr(y, 0, safe_line)
+                except curses.error:
+                    pass  # Skip if we can't draw this line
                 
                 if is_selected:
                     self.stdscr.attroff(curses.color_pair(2))
@@ -263,7 +289,10 @@ class ClusterListScreen(TUIScreen):
     def draw_cluster_details(self):
         """Draw details of the selected cluster."""
         # Draw border
-        self.stdscr.hline(self.details_y, 0, curses.ACS_HLINE, self.width)
+        try:
+            self.stdscr.hline(self.details_y, 0, curses.ACS_HLINE, self.width - 1)
+        except curses.error:
+            pass  # Skip border if we can't draw it
         
         filtered_clusters = self.get_filtered_items(self.clusters)
         if not filtered_clusters or self.selected_index >= len(filtered_clusters):
@@ -276,7 +305,12 @@ class ClusterListScreen(TUIScreen):
         for key, value in details.items():
             if y >= self.footer_y:
                 break
-            self.stdscr.addstr(y, 2, f"{key}: {value}")
+            detail_line = f"{key}: {value}"
+            safe_detail = detail_line[:self.width - 3]  # Leave room for the indent
+            try:
+                self.stdscr.addstr(y, 2, safe_detail)
+            except curses.error:
+                pass  # Skip if we can't draw this line
             y += 1
     
     def get_selected_cluster(self) -> Optional[Cluster]:
@@ -342,7 +376,10 @@ class InstanceGroupListScreen(TUIScreen):
         elif self.selected_index >= self.scroll_offset + visible_count:
             self.scroll_offset = self.selected_index - visible_count + 1
         
-        self.stdscr.hline(self.list_y, 0, curses.ACS_HLINE, self.width)
+        try:
+            self.stdscr.hline(self.list_y, 0, curses.ACS_HLINE, self.width - 1)
+        except curses.error:
+            pass  # Skip border if we can't draw it
         
         for i in range(visible_count):
             group_index = self.scroll_offset + i
@@ -361,16 +398,27 @@ class InstanceGroupListScreen(TUIScreen):
                 if is_selected:
                     self.stdscr.attron(curses.color_pair(2))
                 
-                self.stdscr.addstr(y, 0, group_line.ljust(self.width))
+                safe_line = group_line.ljust(self.width)[:self.width - 1]
+                try:
+                    self.stdscr.addstr(y, 0, safe_line)
+                except curses.error:
+                    pass  # Skip if we can't draw this line
                 
                 if is_selected:
                     self.stdscr.attroff(curses.color_pair(2))
             else:
-                self.stdscr.addstr(y, 0, " " * self.width)
+                safe_empty = " " * (self.width - 1)
+                try:
+                    self.stdscr.addstr(y, 0, safe_empty)
+                except curses.error:
+                    pass  # Skip if we can't draw this line
     
     def draw_instance_group_details(self):
         """Draw details of the selected instance group."""
-        self.stdscr.hline(self.details_y, 0, curses.ACS_HLINE, self.width)
+        try:
+            self.stdscr.hline(self.details_y, 0, curses.ACS_HLINE, self.width - 1)
+        except curses.error:
+            pass  # Skip border if we can't draw it
         
         filtered_groups = self.get_filtered_items(self.instance_groups)
         if not filtered_groups or self.selected_index >= len(filtered_groups):
@@ -383,7 +431,12 @@ class InstanceGroupListScreen(TUIScreen):
         for key, value in details.items():
             if y >= self.footer_y:
                 break
-            self.stdscr.addstr(y, 2, f"{key}: {value}")
+            detail_line = f"{key}: {value}"
+            safe_detail = detail_line[:self.width - 3]  # Leave room for the indent
+            try:
+                self.stdscr.addstr(y, 2, safe_detail)
+            except curses.error:
+                pass  # Skip if we can't draw this line
             y += 1
     
     def get_selected_instance_group(self) -> Optional[InstanceGroup]:
@@ -449,7 +502,10 @@ class InstanceListScreen(TUIScreen):
         elif self.selected_index >= self.scroll_offset + visible_count:
             self.scroll_offset = self.selected_index - visible_count + 1
         
-        self.stdscr.hline(self.list_y, 0, curses.ACS_HLINE, self.width)
+        try:
+            self.stdscr.hline(self.list_y, 0, curses.ACS_HLINE, self.width - 1)
+        except curses.error:
+            pass  # Skip border if we can't draw it
         
         for i in range(visible_count):
             instance_index = self.scroll_offset + i
@@ -468,16 +524,27 @@ class InstanceListScreen(TUIScreen):
                 if is_selected:
                     self.stdscr.attron(curses.color_pair(2))
                 
-                self.stdscr.addstr(y, 0, instance_line.ljust(self.width))
+                safe_line = instance_line.ljust(self.width)[:self.width - 1]
+                try:
+                    self.stdscr.addstr(y, 0, safe_line)
+                except curses.error:
+                    pass  # Skip if we can't draw this line
                 
                 if is_selected:
                     self.stdscr.attroff(curses.color_pair(2))
             else:
-                self.stdscr.addstr(y, 0, " " * self.width)
+                safe_empty = " " * (self.width - 1)
+                try:
+                    self.stdscr.addstr(y, 0, safe_empty)
+                except curses.error:
+                    pass  # Skip if we can't draw this line
     
     def draw_instance_details(self):
         """Draw details of the selected instance."""
-        self.stdscr.hline(self.details_y, 0, curses.ACS_HLINE, self.width)
+        try:
+            self.stdscr.hline(self.details_y, 0, curses.ACS_HLINE, self.width - 1)
+        except curses.error:
+            pass  # Skip border if we can't draw it
         
         filtered_instances = self.get_filtered_items(self.instances)
         if not filtered_instances or self.selected_index >= len(filtered_instances):
@@ -490,7 +557,12 @@ class InstanceListScreen(TUIScreen):
         for key, value in details.items():
             if y >= self.footer_y:
                 break
-            self.stdscr.addstr(y, 2, f"{key}: {value}")
+            detail_line = f"{key}: {value}"
+            safe_detail = detail_line[:self.width - 3]  # Leave room for the indent
+            try:
+                self.stdscr.addstr(y, 2, safe_detail)
+            except curses.error:
+                pass  # Skip if we can't draw this line
             y += 1
     
     def navigate(self, direction: str):

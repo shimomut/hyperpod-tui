@@ -16,9 +16,17 @@ class HyperPodTUI:
         self.client = HyperPodClient()
         self.screen_stack: List = []
         
-        # Configure curses
-        curses.curs_set(0)  # Hide cursor
-        self.stdscr.keypad(True)  # Enable special keys
+        # Configure curses - be more defensive about these calls
+        try:
+            curses.curs_set(0)  # Hide cursor
+        except curses.error:
+            pass  # Some terminals don't support cursor visibility control
+        
+        try:
+            self.stdscr.keypad(True)  # Enable special keys
+        except curses.error:
+            pass  # Some terminals don't support keypad
+        
         self.stdscr.timeout(100)  # Non-blocking input with 100ms timeout
         
         # Start with cluster list screen
@@ -31,8 +39,8 @@ class HyperPodTUI:
                 # Handle screen resize
                 try:
                     self.current_screen.resize()
-                except:
-                    pass
+                except curses.error:
+                    pass  # Ignore resize errors
                 
                 # Draw current screen
                 self.current_screen.draw()
@@ -49,9 +57,6 @@ class HyperPodTUI:
                     break
                     
         except KeyboardInterrupt:
-            pass
-        except Exception as e:
-            # In a real app, we'd log this error
             pass
     
     def handle_input(self, key: str) -> bool:
@@ -124,9 +129,16 @@ class HyperPodTUI:
 def main():
     """Main entry point."""
     try:
-        curses.wrapper(lambda stdscr: HyperPodTUI(stdscr).run())
+        def run_tui(stdscr):
+            # Create and run the TUI
+            tui = HyperPodTUI(stdscr)
+            tui.run()
+        
+        curses.wrapper(run_tui)
     except Exception as e:
+        import traceback
         print(f"Error starting HyperPod TUI: {e}", file=sys.stderr)
+        print(f"Traceback: {traceback.format_exc()}", file=sys.stderr)
         sys.exit(1)
 
 
